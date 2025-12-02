@@ -197,7 +197,7 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
              <ZoomIn className="w-5 h-5 text-white" />
              <input 
                 type="range" 
-                orient="vertical" // Firefox specific, standard usually requires CSS rotation
+                {...({ orient: "vertical" } as any)}
                 className="w-1 h-32 appearance-none bg-white/30 rounded-full outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                 style={{ WebkitAppearance: 'slider-vertical' }}
                 min={zoomCapabilities.min}
