@@ -171,7 +171,7 @@ const App: React.FC = () => {
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-40">
             <button
               onClick={() => exportToExcel(scannedResults)}
-              className="w-full bg-white text-[#8B0000] font-bold py-4 rounded-xl shadow-2xl flex items-center justify-center gap-2 hover:bg-gray-50 active:scale-95 transition-all"
+              className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold py-4 rounded-xl shadow-[0_10px_30px_-10px_rgba(16,185,129,0.5)] flex items-center justify-center gap-2 hover:from-emerald-500 hover:to-green-500 active:scale-95 transition-all transform hover:-translate-y-1 border border-white/10"
             >
               <Download className="w-6 h-6" />
               Xuất Excel ({scannedResults.length})
