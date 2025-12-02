@@ -1,0 +1,7 @@
+{
+  "name": "VN ID QR Scanner",
+  "description": "A specialized tool to scan, extract, and export data from Vietnamese Citizen Identity Card QR codes using AI for intelligent parsing.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
