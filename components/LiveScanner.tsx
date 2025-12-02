@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { X, Check, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, Check } from 'lucide-react';
 import { playScanSound } from '../utils/soundUtils';
 
 interface LiveScannerProps {
@@ -13,12 +13,9 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastCodeRef = useRef<string | null>(null);
   const cooldownRef = useRef<boolean>(false);
-  const trackRef = useRef<MediaStreamTrack | null>(null);
   
   const [error, setError] = useState<string>('');
   const [lastScannedText, setLastScannedText] = useState<string | null>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
-  const [zoomCapabilities, setZoomCapabilities] = useState<{min: number, max: number, step: number} | null>(null);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -26,46 +23,19 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
 
     const startCamera = async () => {
       try {
-        // Request high resolution (4K ideal, 1080p fallback) to resolve small QRs
-        const constraints: MediaStreamConstraints = {
-          video: { 
-            facingMode: 'environment',
-            width: { ideal: 3840 }, 
-            height: { ideal: 2160 },
-            focusMode: 'continuous'
-          } as any // cast to any because focusMode isn't in standard TS lib yet
-        };
-
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.setAttribute('playsinline', 'true');
           await videoRef.current.play();
-
-          // Get Zoom Capabilities
-          const videoTrack = stream.getVideoTracks()[0];
-          trackRef.current = videoTrack;
-          const capabilities = videoTrack.getCapabilities() as any;
-
-          if (capabilities.zoom) {
-            setZoomCapabilities({
-              min: capabilities.zoom.min,
-              max: capabilities.zoom.max,
-              step: capabilities.zoom.step
-            });
-            // Set initial zoom slightly higher if possible to help with small codes
-            const initialZoom = Math.min(capabilities.zoom.max, 2.0);
-            if (initialZoom > 1) {
-              setZoom(initialZoom, videoTrack);
-            }
-          }
-
           requestAnimationFrame(tick);
         }
       } catch (err) {
         console.error("Camera error", err);
-        setError("Không thể truy cập camera hoặc độ phân giải không hỗ trợ.");
+        setError("Không thể truy cập camera. Vui lòng cấp quyền và thử lại.");
       }
     };
 
@@ -73,44 +43,44 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
       if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && canvasRef.current) {
         const video = videoRef.current;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
 
         if (ctx) {
-          // Keep canvas at internal high resolution for processing
-          canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-          
-          // Draw full frame
+          canvas.width = video.videoWidth;
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           
-          // Optimization: Crop the center region for scanning.
-          // Small QRs are usually centered by the user. Scanning the whole 4K frame is slow.
-          // We define a Scan Region of Interest (ROI) - e.g. center 60%
-          const scanSize = Math.min(canvas.width, canvas.height) * 0.6;
-          const sx = (canvas.width - scanSize) / 2;
-          const sy = (canvas.height - scanSize) / 2;
-
-          const imageData = ctx.getImageData(sx, sy, scanSize, scanSize);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           
+          // Use stricter options for cleaner detection
           const code = jsQR(imageData.data, imageData.width, imageData.height, {
             inversionAttempts: "dontInvert",
           });
 
           if (code && code.data) {
+            // Logic for continuous scanning with cooldown
             if (!cooldownRef.current && code.data !== lastCodeRef.current) {
               cooldownRef.current = true;
               lastCodeRef.current = code.data;
               
+              // Actions
               playScanSound();
               onScan(code.data);
               setLastScannedText("Đã quét thành công!");
 
+              // Reset visual feedback after 1.5s
               setTimeout(() => {
                 setLastScannedText(null);
               }, 1500);
 
+              // Allow scanning again (even the same code) after 3 seconds
+              // Or allow scanning a DIFFERENT code immediately? 
+              // Usually for IDs, we want a delay to prevent spamming the API.
               setTimeout(() => {
                 cooldownRef.current = false;
+                // We clear lastCodeRef if we want to allow re-scanning the same card immediately after cooldown.
+                // Keeping it set prevents accidental double-scanning if user holds phone still.
+                // Let's clear it to allow re-scan after 3s.
                 lastCodeRef.current = null;
               }, 3000);
             }
@@ -130,29 +100,13 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
     };
   }, [onScan]);
 
-  const setZoom = (value: number, track = trackRef.current) => {
-    if (track) {
-      try {
-        track.applyConstraints({ advanced: [{ zoom: value }] } as any);
-        setZoomLevel(value);
-      } catch (e) {
-        console.error("Zoom failed", e);
-      }
-    }
-  };
-
-  const handleZoomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setZoom(val);
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
       {/* Header controls */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 bg-gradient-to-b from-black/70 to-transparent">
         <div className="text-white">
           <h3 className="font-bold text-lg">Quét liên tục</h3>
-          <p className="text-xs text-white/80">Di chuyển camera đến mã QR</p>
+          <p className="text-xs text-white/80">Di chuyển camera đến mã QR tiếp theo</p>
         </div>
         <button 
           onClick={onClose}
@@ -171,7 +125,7 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
         <canvas ref={canvasRef} className="hidden" />
         
         {/* Scanning Overlay */}
-        <div className="absolute inset-0 border-[40px] border-black/50 z-10 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 border-[40px] border-black/50 z-10 flex items-center justify-center">
             <div className={`w-72 h-48 rounded-lg border-2 relative transition-colors duration-300 ${lastScannedText ? 'border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.6)]' : 'border-[#c99a2c]'}`}>
                 {!lastScannedText && (
                   <>
@@ -191,26 +145,6 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
             </div>
         </div>
 
-        {/* Zoom Controls - Only show if supported */}
-        {zoomCapabilities && (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-40 bg-black/40 backdrop-blur-md p-3 rounded-full flex flex-col items-center gap-4">
-             <ZoomIn className="w-5 h-5 text-white" />
-             <input 
-                type="range" 
-                {...({ orient: "vertical" } as any)}
-                className="w-1 h-32 appearance-none bg-white/30 rounded-full outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                style={{ WebkitAppearance: 'slider-vertical' }}
-                min={zoomCapabilities.min}
-                max={zoomCapabilities.max}
-                step={zoomCapabilities.step}
-                value={zoomLevel}
-                onChange={handleZoomChange}
-             />
-             <ZoomOut className="w-5 h-5 text-white" />
-             <span className="text-white text-xs font-bold">{zoomLevel.toFixed(1)}x</span>
-          </div>
-        )}
-
         {/* Success Toast / Error Message */}
         <div className="absolute bottom-20 left-0 right-0 flex justify-center z-20 px-4">
            {lastScannedText && (
@@ -228,8 +162,7 @@ export const LiveScanner: React.FC<LiveScannerProps> = ({ onScan, onClose }) => 
       
       {/* Footer Instruction */}
       <div className="bg-black text-center py-6 text-white/60 text-sm">
-         Đặt mã QR CCCD vào trong khung. <br/>
-         Sử dụng thanh trượt bên phải để phóng to nếu mã QR quá nhỏ.
+         Đặt mã QR CCCD vào trong khung hình chữ nhật
       </div>
     </div>
   );
